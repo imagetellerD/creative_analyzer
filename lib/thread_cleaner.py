@@ -24,7 +24,7 @@ class OmgThreadCleaner(threading.Thread):
 
 	def run(self):
 		while True:
-			self.logger.info('omg translated cleaner start ...')
+			self.logger.info('omg thread cleaner start ...')
 			try:
 				self.thread_cleaner()
 			except:

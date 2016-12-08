@@ -86,7 +86,7 @@ class OmgThreadCollector(threading.Thread):
 		cursor.execute(sql, (max_creative_id))
 		creatives = self.dictfetchall(cursor)
 					
-		self.logger.debug("collector find %d new creative", len(creatives))
+		self.logger.debug("find %d new creative to collect", len(creatives))
 		if len(creatives) == 0:
 			return 0
 

@@ -16,7 +16,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.mysql', # Add 'postgresql_psycopg2', 'mysql', 'sqlite3' or 'oracle'.
         'NAME': 'zeus_creative',                      # Or path to database file if using sqlite3.
         'USER': 'zeus',
-        'PASSWORD': 'dmsuez315',
+        'PASSWORD': '',
         'HOST': '10.0.0.209',                      # Empty for localhost through domain sockets or '127.0.0.1' for localhost through TCP.
         'PORT': '3390',                      # Set to empty string for default.
     },

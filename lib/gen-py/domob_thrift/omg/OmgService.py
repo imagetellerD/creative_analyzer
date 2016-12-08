@@ -45,13 +45,14 @@ class Iface(object):
     """
     pass
 
-  def analyzeImage(self, data_type, image_data):
+  def analyzeImage(self, data_type, image_data, language):
     """
     根据输入的图片url/data/文件目录，对图片进行解析并返回tags和descriptions
 
     Parameters:
      - data_type: 图片数据类型
      - image_data: 图片数据
+     - language
     """
     pass
 
@@ -167,22 +168,24 @@ class Client(Iface):
       raise result.e
     raise TApplicationException(TApplicationException.MISSING_RESULT, "searchCreativeTexts failed: unknown result");
 
-  def analyzeImage(self, data_type, image_data):
+  def analyzeImage(self, data_type, image_data, language):
     """
     根据输入的图片url/data/文件目录，对图片进行解析并返回tags和descriptions
 
     Parameters:
      - data_type: 图片数据类型
      - image_data: 图片数据
+     - language
     """
-    self.send_analyzeImage(data_type, image_data)
+    self.send_analyzeImage(data_type, image_data, language)
     return self.recv_analyzeImage()
 
-  def send_analyzeImage(self, data_type, image_data):
+  def send_analyzeImage(self, data_type, image_data, language):
     self._oprot.writeMessageBegin('analyzeImage', TMessageType.CALL, self._seqid)
     args = analyzeImage_args()
     args.data_type = data_type
     args.image_data = image_data
+    args.language = language
     args.write(self._oprot)
     self._oprot.writeMessageEnd()
     self._oprot.trans.flush()
@@ -270,7 +273,7 @@ class Processor(Iface, TProcessor):
     args.read(iprot)
     iprot.readMessageEnd()
     result = analyzeImage_result()
-    result.success = self._handler.analyzeImage(args.data_type, args.image_data)
+    result.success = self._handler.analyzeImage(args.data_type, args.image_data, args.language)
     oprot.writeMessageBegin("analyzeImage", TMessageType.REPLY, seqid)
     result.write(oprot)
     oprot.writeMessageEnd()
@@ -738,17 +741,20 @@ class analyzeImage_args(object):
   Attributes:
    - data_type: 图片数据类型
    - image_data: 图片数据
+   - language
   """
 
   thrift_spec = (
     None, # 0
     (1, TType.I32, 'data_type', None, None, ), # 1
     (2, TType.STRUCT, 'image_data', (domob_thrift.omg_types.ttypes.ImageData, domob_thrift.omg_types.ttypes.ImageData.thrift_spec), None, ), # 2
+    (3, TType.I32, 'language', None, None, ), # 3
   )
 
-  def __init__(self, data_type=None, image_data=None,):
+  def __init__(self, data_type=None, image_data=None, language=None,):
     self.data_type = data_type
     self.image_data = image_data
+    self.language = language
 
   def read(self, iprot):
     if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
@@ -770,6 +776,11 @@ class analyzeImage_args(object):
           self.image_data.read(iprot)
         else:
           iprot.skip(ftype)
+      elif fid == 3:
+        if ftype == TType.I32:
+          self.language = iprot.readI32();
+        else:
+          iprot.skip(ftype)
       else:
         iprot.skip(ftype)
       iprot.readFieldEnd()
@@ -787,6 +798,10 @@ class analyzeImage_args(object):
     if self.image_data != None:
       oprot.writeFieldBegin('image_data', TType.STRUCT, 2)
       self.image_data.write(oprot)
+      oprot.writeFieldEnd()
+    if self.language != None:
+      oprot.writeFieldBegin('language', TType.I32, 3)
+      oprot.writeI32(self.language)
       oprot.writeFieldEnd()
     oprot.writeFieldStop()
     oprot.writeStructEnd()

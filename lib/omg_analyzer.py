@@ -26,6 +26,8 @@ from thrift.protocol import TBinaryProtocol
 from thrift.server import TServer
 
 from elasticsearch import Elasticsearch
+from elasticsearch.exceptions import NotFoundError
+from elasticsearch.client import IndicesClient
 import string
 import hashlib
 
@@ -54,7 +56,7 @@ class OmgAnalyzer(object):
 		self.es_index = config.get('elasticsearch', 'index')
 		self.es_type = config.get('elasticsearch', 'type')
 		self.es_analyzer = config.get('elasticsearch', 'analyzer')
-		self.es_timeout = config.get('elasticsearch', 'timeout')
+		self.es_timeout = config.getint('elasticsearch', 'timeout')
 		self.es_hosts = self.config.get('elasticsearch', 'hosts').strip().split(",")
 
 		self.imageteller_host = self.config.get('server', 'imageteller.host')
@@ -110,7 +112,7 @@ class OmgAnalyzer(object):
 				self.initClient()
 				django.db.close_old_connections()
 
-				self.monitor()
+				self.analyze()
 			except:
 				self.logger.exception('analyzer error')
 			finally:
@@ -119,7 +121,7 @@ class OmgAnalyzer(object):
 			if self.running:
 				time.sleep(self.interval)
 
-	def monitor(self):
+	def analyze(self):
 		"""监控
 
 		把上次检测之后的所有状态变化拿出来，发送报警
@@ -132,12 +134,17 @@ class OmgAnalyzer(object):
 		for creative in creatives:
 			tagstr = str()
 			try:
-				result = self.imageteller_client.searchCreativeTexts(['fight', 'message'], ['game fantastic', 'just fun'])
-				'''
 				# 从图片识别服务中获取标签和描述
 				imageData = ImageData()
 				imageData.image_url = creative.image_url
-				imageAnalyzeResult = self.imageteller_client.analyzeImage(ImageDataType.IDT_URL, imageData)
+				imageAnalyzeResult = self.imageteller_client.analyzeImage(ImageDataType.IDT_URL, imageData, ImageAnalyzeLanguage.IAL_EN)
+
+				self.logger.debug("request [%s] and imageteller_client return %s", creative.image_url, imageAnalyzeResult)
+
+				if len(imageAnalyzeResult.tags) == 0 and len(imageAnalyzeResult.descriptions) == 0:
+					creative.translated = 2
+					creative.save()
+					continue
 
 				# 结果构成 tag
 				for imageTag in imageAnalyzeResult.tags:
@@ -171,6 +178,8 @@ class OmgAnalyzer(object):
 					# 那么如果实际文案是不同的，我们就放弃之前的文案和标签，保存最新的
 					for tag in sourceRes['tags'].split():
 						tags.add(tag)
+				else:
+					self.logger.warn("[%s] and [%s] have same md5, keep later", sourceRes['mesg'], creative.creative_text)
 
 
 				tagstr = string.join(tags)
@@ -185,18 +194,16 @@ class OmgAnalyzer(object):
 					id=hashlib.md5(creative.creative_text).hexdigest(),
 					request_timeout=self.es_timeout
 					)
-				'''
 			except:
 				self.logger.error('id:[%d], creative_id:[%d], text:[%s], image_url:[%s], tags:[%s]', creative.id, creative.creative_id, creative.creative_text, creative.image_url, tagstr)
 				self.logger.exception('analyze creative error')
 				continue
 
 			self.logger.debug('id:[%d], creative_id:[%d], text:[%s], image_url:[%s], tags:[%s]', creative.id, creative.creative_id, creative.creative_text, creative.image_url, tagstr)
-			'''
+
 			# 走到这里代表已经识别图片并保存了tags和文案到es，那么可以标记这条记录为已经识别
-			creative.trasnlated = 1
+			creative.translated = 1
 			creative.save()
-			'''
 
 			time.sleep(self.analyze_interval)
 

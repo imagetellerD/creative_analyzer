@@ -35,6 +35,23 @@ class ImageDataType(object):
     "IDT_BINARY": 3,
   }
 
+class ImageAnalyzeLanguage(object):
+  """
+  图片分析返回语言类型
+  """
+  IAL_CN = 1
+  IAL_EN = 2
+
+  _VALUES_TO_NAMES = {
+    1: "IAL_CN",
+    2: "IAL_EN",
+  }
+
+  _NAMES_TO_VALUES = {
+    "IAL_CN": 1,
+    "IAL_EN": 2,
+  }
+
 
 class Test(object):
   """

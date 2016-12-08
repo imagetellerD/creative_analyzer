@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+__author__='lizhengxu'
+
 import logging
 import time
 import django
@@ -9,6 +11,19 @@ from django.db.models import F
 
 from db.models import ZeusOmg
 from thread_cleaner import OmgThreadCleaner
+from thread_collector import OmgThreadCollector
+
+from domob_thrift.omg_types.ttypes import *
+from domob_thrift.omg_types.constants import *
+from domob_thrift.omg.ttypes import *
+from domob_thrift.omg.constants import *
+from domob_thrift.omg import OmgService
+
+from thrift import Thrift
+from thrift.transport import TSocket
+from thrift.transport import TTransport
+from thrift.protocol import TBinaryProtocol
+from thrift.server import TServer
 
 from elasticsearch import Elasticsearch
 import string
@@ -34,45 +49,53 @@ class OmgAnalyzer(object):
 		self.analyze_interval = config.getint('default', 'analyze.interval.second')
 
 		self.cleaner_on = config.get('default', 'thread_analyzed_creative_cleaner.enable')
+		self.collector_on = config.get('default', 'thread_creative_collector.enable')
 
 		self.es_index = config.get('elasticsearch', 'index')
 		self.es_type = config.get('elasticsearch', 'type')
 		self.es_analyzer = config.get('elasticsearch', 'analyzer')
 		self.es_timeout = config.get('elasticsearch', 'timeout')
+		self.es_hosts = self.config.get('elasticsearch', 'hosts').strip().split(",")
+
+		self.imageteller_host = self.config.get('server', 'imageteller.host')
+		self.imageteller_port = self.config.getint('server', 'imageteller.port')
+
+		self.imageteller_transport = None
+		self.imageteller_client = None
 
 		django.db.connection.cursor().execute('set wait_timeout=3600')
 
-	def initMicrosoftClient(self, host, port):
-		self.microsoft_client = None
+	def initImagetellerClient(self, host, port):
+		transport = TSocket.TSocket(host, port)
+		transport = TTransport.TFramedTransport(transport)
+		protocol = TBinaryProtocol.TBinaryProtocol(transport)
+		self.imageteller_client = OmgService.Client(protocol)
+		transport.open()
+		self.imageteller_transport = transport
 
-	def initCloudSightClient(self, host, port):
-		self.cloud_sight_client = None
-	
 	def initClient(self):
-		self.initMicrosoftClient(
-				self.config.get('server', 'microsoft.host'),
-				self.config.getint('server', 'microsoft.port')
-		)
-		self.initCloudSightClient(
-				self.config.get('server', 'cloud.sight.host'),
-				self.config.getint('server', 'cloud.sight.port')
-		)
+		self.initImagetellerClient(self.imageteller_host, self.imageteller_port)
 
-		hoststr = self.config.get('elasticsearch', 'hosts')
-		self.esClient = Elasticsearch(hosts=hoststr.strip().split(","))
+		self.es_client = Elasticsearch(hosts=self.es_hosts)
 	
 	def closeClient(self):
-		'''
-		self.microsoft_client.close()
-		self.cloud_sight_client.close()
-		'''
-		pass
+		if self.imageteller_transport is not None:
+			try:
+				self.imageteller_transport.close()
+				self.imageteller_transport = None
+			except:
+				pass
 
 	def run(self):
 		self.runbackthread()
 		self.runAnalyzer()
 	
 	def runbackthread(self):
+		# 收集线程
+		if self.collector_on == "on":
+			self.collector = OmgThreadCollector(self.config)
+			self.collector.daemon = True
+			self.collector.start()
 		# 清理线程
 		if self.cleaner_on == "on":
 			self.cleaner = OmgThreadCleaner()
@@ -88,21 +111,13 @@ class OmgAnalyzer(object):
 				django.db.close_old_connections()
 
 				self.monitor()
-
-				self.closeClient()
 			except:
 				self.logger.exception('analyzer error')
+			finally:
+				self.closeClient()
 
 			if self.running:
 				time.sleep(self.interval)
-
-	def dictfetchall(self, cursor):
-		"Return all rows from a cursor as a dict"
-		columns = [col[0] for col in cursor.description]
-		return [
-			dict(zip(columns, row))
-			for row in cursor.fetchall()
-		]
 
 	def monitor(self):
 		"""监控
@@ -115,69 +130,68 @@ class OmgAnalyzer(object):
 		self.logger.info('get %d creative to analyze', len(creatives))
 
 		for creative in creatives:
-			chineseText = True
 			tagstr = str()
-			if not self.contain_chinese(creative.creative_text):
-				# 出于历史原因，数据处理时，我们无法完全过滤中文文案，这里加判断
-				chineseText = False
-				try:
-					'''
-					# 从图片识别服务中获取标签和描述
-					m_tags, m_description = self.microsoft_client.request(creative.image_url)
-					c_tags, c_description = self.cloud_sight_client.request(creative.image_url)
+			try:
+				result = self.imageteller_client.searchCreativeTexts(['fight', 'message'], ['game fantastic', 'just fun'])
+				'''
+				# 从图片识别服务中获取标签和描述
+				imageData = ImageData()
+				imageData.image_url = creative.image_url
+				imageAnalyzeResult = self.imageteller_client.analyzeImage(ImageDataType.IDT_URL, imageData)
 
-					# 结果构成 tag
-					tagstr = string.join(m_tags) + string.join(c_tags) + string.join(m_description) + string.join(c_description)
+				# 结果构成 tag
+				for imageTag in imageAnalyzeResult.tags:
+					tagstr += imageTag.tag + ' '
+				for description in imageAnalyzeResult.descriptions:
+					tagstr += description + '. '
 
+				# 通过es的分词功能处理tags
+				analyzeRes = self.es_client.indices.analyze(
+					index=self.es_index, analyzer=self.es_analyzer,
+					text=tagstr
+					)
 
-					# 通过es的分词功能处理tags
-					analyzeRes = self.esClient.indices.analyze(
-						index=self.es_index, analyzer=self.es_analyzer,
-						text=tagstr
-						)
-
-					tags = set()
-					for token in analyzeRes['tokens']:
-						tags.add(token['token'])
+				tags = set()
+				for token in analyzeRes['tokens']:
+					tags.add(token['token'])
 
 				
-					# 如果已存在相同文案，则添加新tags
-					sourceRes = None
-					try:
-						sourceRes = self.esClient.get_source(
-							index=self.es_index, doc_type=self.es_type,
-							id=hashlib.md5(creative.creative_text).hexdigest()
-							)
-					except NotFoundError:
-						sourceRes = None
-
-					if sourceRes is not None and sourceRes['mesg'] == creative.creative_text:
-						# 可能不同文案出现了相同哈希，理论上还是存在这种可能的
-						# 那么如果实际文案是不同的，我们就放弃之前的文案和标签，保存最新的
-						for tag in sourceRes['tags'].split():
-							tags.add(tag)
-
-
-					tagstr = string.join(tags)
-
-					# 更新es的记录
-					self.esClient.index(
+				# 如果已存在相同文案，则添加新tags
+				sourceRes = None
+				try:
+					sourceRes = self.es_client.get_source(
 						index=self.es_index, doc_type=self.es_type,
-						body={
-							"tags": tagstr,
-							"mesg": creative.creative_text
-						},
-						id=hashlib.md5(creative.creative_text).hexdigest(),
-						request_timeout=self.es_timeout
+						id=hashlib.md5(creative.creative_text).hexdigest()
 						)
-					'''
-					pass
-				except:
-					self.logger.error('id:[%d], text:[%s], image_url:[%s], chinese_text:[%s], tags:[%s]', creative.id, creative.creative_text, creative.image_url, chineseText, tagstr)
-					self.logger.exception('analyze creative error')
-					continue
+				except NotFoundError:
+					sourceRes = None
 
-			self.logger.debug('id:[%d], text:[%s], image_url:[%s], chinese_text:[%s], tags:[%s]', creative.id, creative.creative_text, creative.image_url, chineseText, tagstr)
+				if sourceRes is not None and sourceRes['mesg'] == creative.creative_text:
+					# 可能不同文案出现了相同哈希，理论上还是存在这种可能的
+					# 那么如果实际文案是不同的，我们就放弃之前的文案和标签，保存最新的
+					for tag in sourceRes['tags'].split():
+						tags.add(tag)
+
+
+				tagstr = string.join(tags)
+
+				# 更新es的记录
+				self.es_client.index(
+					index=self.es_index, doc_type=self.es_type,
+					body={
+						"tags": tagstr,
+						"mesg": creative.creative_text
+					},
+					id=hashlib.md5(creative.creative_text).hexdigest(),
+					request_timeout=self.es_timeout
+					)
+				'''
+			except:
+				self.logger.error('id:[%d], creative_id:[%d], text:[%s], image_url:[%s], tags:[%s]', creative.id, creative.creative_id, creative.creative_text, creative.image_url, tagstr)
+				self.logger.exception('analyze creative error')
+				continue
+
+			self.logger.debug('id:[%d], creative_id:[%d], text:[%s], image_url:[%s], tags:[%s]', creative.id, creative.creative_id, creative.creative_text, creative.image_url, tagstr)
 			'''
 			# 走到这里代表已经识别图片并保存了tags和文案到es，那么可以标记这条记录为已经识别
 			creative.trasnlated = 1
@@ -188,9 +202,3 @@ class OmgAnalyzer(object):
 
 	def stop(self):
 		self.running = False
-
-	def contain_chinese(self, check_str):
-		for ch in check_str.decode('utf-8'):
-			if u'\u4e00' <= ch <= u'\u9fff':
-				return True
-		return False

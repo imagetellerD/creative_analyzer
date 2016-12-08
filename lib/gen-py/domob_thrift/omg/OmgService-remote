@@ -22,9 +22,10 @@ if len(sys.argv) <= 1 or sys.argv[1] == '--help':
   print 'Usage: ' + sys.argv[0] + ' [-h host:port] [-u url] [-f[ramed]] function [arg1 [arg2...]]'
   print ''
   print 'Functions:'
-  print '  Test test(i64 ad_id)'
-  print '  string generatePoem(string title,  important_words)'
-  print '   splitWordsForPoem(string sentence)'
+  print '  Test test(i64 id)'
+  print '  string generatePoem(string title,  tags,  description)'
+  print '   searchCreativeTexts( tags,  description)'
+  print '  ImageAnalyzeResult analyzeImage(ImageDataType data_type, ImageData image_data)'
   print ''
   sys.exit(0)
 
@@ -82,16 +83,22 @@ if cmd == 'test':
   pp.pprint(client.test(eval(args[0]),))
 
 elif cmd == 'generatePoem':
-  if len(args) != 2:
-    print 'generatePoem requires 2 args'
+  if len(args) != 3:
+    print 'generatePoem requires 3 args'
     sys.exit(1)
-  pp.pprint(client.generatePoem(args[0],eval(args[1]),))
+  pp.pprint(client.generatePoem(args[0],eval(args[1]),eval(args[2]),))
 
-elif cmd == 'splitWordsForPoem':
-  if len(args) != 1:
-    print 'splitWordsForPoem requires 1 args'
+elif cmd == 'searchCreativeTexts':
+  if len(args) != 2:
+    print 'searchCreativeTexts requires 2 args'
     sys.exit(1)
-  pp.pprint(client.splitWordsForPoem(args[0],))
+  pp.pprint(client.searchCreativeTexts(eval(args[0]),eval(args[1]),))
+
+elif cmd == 'analyzeImage':
+  if len(args) != 2:
+    print 'analyzeImage requires 2 args'
+    sys.exit(1)
+  pp.pprint(client.analyzeImage(eval(args[0]),eval(args[1]),))
 
 else:
   print 'Unrecognized method %s' % cmd

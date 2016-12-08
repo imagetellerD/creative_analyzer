@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
 
+__author__='lizhengxu'
+
 import threading
 import time
 import logging
+
+import django
 from django.db import transaction
 from db.models import ZeusOmg
 
@@ -29,4 +33,12 @@ class OmgThreadCleaner(threading.Thread):
 
 	@transaction.atomic
 	def thread_cleaner(self):
-		timeout_threads = ZeusOmg.objects.filter(translated=1).delete()
+		# 我们保留100个最新记录，用以识别保存到哪个creative_id，以便collector可以从未识别creative开始收集
+		cursor = django.db.connection.cursor()
+		sql = '''
+		DELETE FROM zeus_omg 
+		WHERE translated = 1 AND creative_id < 
+		(SELECT creative_id FROM (SELECT max(creative_id)-100 AS creative_id FROM zeus_omg) AS tmp)
+		'''
+		cursor.execute(sql)
+		transaction.commit_unless_managed()

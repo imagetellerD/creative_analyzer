@@ -1,6 +1,8 @@
 #!/usr/local/bin/python
 # -*- coding: utf-8 -*-
 
+__author__='lizhengxu'
+
 import argparse
 import ConfigParser
 import logging.config
@@ -12,7 +14,6 @@ from domob_pyutils.dm303 import DomobBase
 basepath = os.path.realpath(os.path.dirname(__file__)+'/../')
 sys.path.append(basepath+'/lib')
 sys.path.append(basepath+'/lib/gen-py')
-sys.path.append("/home/zeus/lizhengxu/hack/python-lib/lib/python2.7/site-packages")
 
 if __name__ == '__main__':
 	ap = argparse.ArgumentParser(description = 'domob omg analyzer')

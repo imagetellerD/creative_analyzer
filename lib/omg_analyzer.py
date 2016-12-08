@@ -173,13 +173,17 @@ class OmgAnalyzer(object):
 				except NotFoundError:
 					sourceRes = None
 
-				if sourceRes is not None and sourceRes['mesg'] == creative.creative_text:
-					# 可能不同文案出现了相同哈希，理论上还是存在这种可能的
-					# 那么如果实际文案是不同的，我们就放弃之前的文案和标签，保存最新的
-					for tag in sourceRes['tags'].split():
-						tags.add(tag)
-				else:
-					self.logger.warn("[%s] and [%s] have same md5, keep later", sourceRes['mesg'], creative.creative_text)
+				# 说明找到了相同hash
+				if sourceRes is not None:
+					if sourceRes['mesg'] == creative.creative_text:
+						# 可能不同文案出现了相同哈希，理论上还是存在这种可能的
+						# 那么如果实际文案是不同的，我们就放弃之前的文案和标签，保存最新的
+						# 所以如果text的字符串比较也确实相同了，那么我们就把之前的tag也加上，再做更新
+						for tag in sourceRes['tags'].split():
+							tags.add(tag)
+					else:
+						# 虽然hash相同，但字符串比较不同，那么就冲突了，我们放弃之前的记录
+						self.logger.warn("[%s] and [%s] have same md5, keep later", sourceRes['mesg'], creative.creative_text)
 
 
 				tagstr = string.join(tags)
